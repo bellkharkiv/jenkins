@@ -1,33 +1,67 @@
-dockerRegistry = 'registry.******.com/repository/****/'
+dockerRegistry = 'registry.***-solutions.com/repository/***/'
 dockerRegistryUrl = "https://${dockerRegistry}"
 properties([
-   parameters([
-       choice(name: 'DEPLOY', choices: 'FALSE\nTRUE', description: 'Set true to perform deploy to Kubernetes')
-   ])
+    parameters([
+        choice(name: 'DEPLOY', choices: 'FALSE\nTRUE', description: 'Set true to perform deploy to Kubernetes'),
+    ])
 ])
 node('master') {
-   stage('Checkout') {
-       checkout scm
-   }
-   stage('Docker build and push') {
-       withCredentials([[$class: 'FileBinding', credentialsId: '*****_bitbucket_key', variable: 'id_rsa']]) {
-           sh '''
-               rm -f id_rsa || true
-               cp ${id_rsa} .
-           '''
-       }
-       docker.withRegistry(dockerRegistryUrl, '****_nexus_key') {
-           projectName = env.JOB_NAME.split('/')[1]
-           fullName = dockerRegistry + projectName
-           customImageID = docker.build("${fullName}:1.0.${env.BUILD_ID}", '--no-cache .')
-           def deployBranches = ['master','qa']
-           if (env.BRANCH_NAME in deployBranches) {
-               customImageBranch = docker.build("${fullName}:${env.BRANCH_NAME}-1.0.${env.BUILD_ID}", '--no-cache .')
-               if (params.DEPLOY == 'TRUE') {
-                   customImageID.push()
-                   customImageBranch.push()
-               }
-           }
-       }
-   }
+    properties([disableConcurrentBuilds()])
+    try {
+        notifyBuild('STARTED')
+        stage('Checkout') {
+            checkout scm
+        }
+        stage('Docker build and push') {
+            withCredentials([[$class: 'FileBinding', credentialsId: '***_bitbucket_key', variable: 'id_rsa']]) {
+                sh '''
+                    rm -f id_rsa || true
+                    cp ${id_rsa} .
+                '''
+            }
+            docker.withRegistry(dockerRegistryUrl, '***_nexus_key') {
+                projectName = env.JOB_NAME.split('/')[1]
+                fullName = dockerRegistry + projectName
+                customImageID = docker.build("${fullName}:1.0.${env.BUILD_ID}", '--no-cache .')
+                def deployBranches = ['master','qa']
+                if (env.BRANCH_NAME in deployBranches) {
+                    customImageBranch = docker.build("${fullName}:${env.BRANCH_NAME}-1.0.${env.BUILD_ID}", '--no-cache .')
+                    if (params.DEPLOY == 'TRUE') {
+                        customImageID.push()
+                        customImageBranch.push()
+                    }
+                }
+            }
+        }
+    }
+    catch (e) {
+        currentBuild.result = 'FAILED'
+        throw e
+    }
+    finally {
+        notifyBuild(currentBuild.result)
+    }
+}
+
+def notifyBuild(String buildStatus = 'STARTED') {
+    // build status of null means successful
+    buildStatus =  buildStatus ?: 'SUCCESSFUL'
+
+    def subject = "${buildStatus}: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]'"
+    def summary = "${subject} (${env.BUILD_URL})"
+
+    if (buildStatus == 'STARTED') {
+        color = 'YELLOW'
+        colorCode = '#FFFF00'
+    }
+    else if (buildStatus == 'SUCCESSFUL') {
+        color = 'GREEN'
+        colorCode = '#00FF00'
+    }
+    else {
+        color = 'RED'
+        colorCode = '#FF0000'
+    }
+
+    slackSend (color: colorCode, message: summary)
 }
