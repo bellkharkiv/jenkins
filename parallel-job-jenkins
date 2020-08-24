@@ -1,0 +1,17 @@
+node('master') {  // выполняется на основной ноде
+    currentBuild.result = 'SUCCESS'    // в другом месте скрипта можно заменить на 'FAILURE' чтобы весь пайп считался заваленным
+    wrap([$class: 'TimestamperBuildWrapper']) {   //чтобы видеть время выполнения в консоли
+        stage('test'){ // название стадии, внутри блока parralel не должно быть stage
+            parallel parallelTask1: {  //название паралельного выполнение чтобы различать в отчете
+            	build job: 'test-1', parameters: [string(name: 'PARAM_NAME1', value: 'some value'),
+            											  booleanParam(name: 'bool_PARAM_NAME', value: true)]
+            }, parallelTask2: {
+            	build job: 'test', parameters: [string(name: 'PARAM_NAME1', value: 'some value'),
+            											  booleanParam(name: 'bool_PARAM_NAME', value: true)]
+            }
+        }
+        stage('printenv'){
+        	sh 'printenv'  // печатаем в консоль доступные переменные окружения
+    	}
+    }
+}
