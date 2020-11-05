@@ -1,0 +1,47 @@
+properties([
+    parameters([
+        string(
+            defaultValue: 'master',
+            description: 'Branch name to deploy',
+            name: 'BRANCH_NAME',
+            trim: true
+        )
+    ])
+])
+
+def configureEnvBeforeBuild(toolName) {
+    def currentBuildToolHome = tool toolName
+    env.PATH = "${currentBuildToolHome}/bin:${env.PATH}"
+}
+
+timestamps {
+    node('livestream') {
+        stage('Git checkout') {
+            configureEnvBeforeBuild('node-8')
+            def deployBranches = ['master'] 
+            git credentialsId: 'jenkins-ssh', url: 'git@bitbucket.org:***/turn-server-nodejs.git'
+            def git_commit_short = sh(returnStdout: true, script: 'git rev-parse --short HEAD')
+            currentBuild.displayName = currentBuild.displayName + "_${BRANCH_NAME}_${git_commit_short}"
+        }
+        stage('Build app') {
+            sh '''
+                npm ci
+            '''.stripIndent()
+        }
+        stage('Deploy app'){
+            withEnv([
+                'JENKINS_NODE_COOKIE=dontKillMe',
+                'NODE_ENV=production'
+            ]) {
+                sh '''
+                    cd /var/www/jenkins
+                    pm2 delete ${JOB_NAME} || true
+                    rm -rf ./${JOB_NAME}
+                    cp -r ${WORKSPACE} .
+                    cd ${JOB_NAME}
+                    pm2 start server.js --name ${JOB_NAME}
+                '''.stripIndent()
+            }
+        }
+    }
+}
